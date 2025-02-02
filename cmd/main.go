@@ -1,8 +1,12 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -12,7 +16,40 @@ import (
 	"github.com/kobaltio/api/internal/convert"
 )
 
-func main() {
+func gracefulShutdown(server *http.Server) {
+	serverCtx, serverStopCtx := context.WithCancel(context.Background())
+
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+	go func() {
+		<-sig
+
+		shutdownCtx, cancel := context.WithTimeout(serverCtx, 10*time.Second)
+		defer cancel()
+
+		go func() {
+			<-shutdownCtx.Done()
+			if shutdownCtx.Err() == context.DeadlineExceeded {
+				log.Fatal("graceful shutdown timed out.. forcing exit.")
+			}
+		}()
+
+		err := server.Shutdown(shutdownCtx)
+		if err != nil {
+			log.Fatal(err)
+		}
+		serverStopCtx()
+	}()
+
+	err := server.ListenAndServe()
+	if err != nil && err != http.ErrServerClosed {
+		log.Fatal(err)
+	}
+
+	<-serverCtx.Done()
+}
+
+func registerRoutes() *chi.Mux {
 	router := chi.NewRouter()
 
 	router.Use(
@@ -33,5 +70,12 @@ func main() {
 		r.Mount("/convert", convert.RegisterRoutes())
 	})
 
-	log.Fatal(http.ListenAndServe(":8080", router))
+	return router
+}
+
+func main() {
+	gracefulShutdown(&http.Server{
+		Addr:    "0.0.0.0:8080",
+		Handler: registerRoutes(),
+	})
 }
