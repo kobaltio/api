@@ -62,6 +62,7 @@ func registerRoutes() *chi.Mux {
 		middleware.Logger,
 		middleware.RedirectSlashes,
 		middleware.Recoverer,
+		middleware.Timeout(30*time.Second),
 		middleware.Heartbeat("/healthz"),
 		httprate.LimitByIP(10, time.Minute),
 	)
