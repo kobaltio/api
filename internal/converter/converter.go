@@ -36,6 +36,84 @@ func GetVideoDuration(url string) (time.Duration, error) {
 	return parseDuration(durationStr)
 }
 
+func DownloadCover(url string) error {
+	thumbnailURL, err := getThumbnailURL(url)
+	if err != nil {
+		return err
+	}
+
+	imgData, err := downloadThumbnail(thumbnailURL)
+	if err != nil {
+		return err
+	}
+
+	croppedImgData, err := cropThumbnail(imgData)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile("cover.jpg", croppedImgData, 0644)
+}
+
+func DownloadAudio(url string) error {
+	cmd := exec.Command(
+		"yt-dlp",
+		"-x",
+		"--audio-format", "mp3",
+		"--audio-quality", "0",
+		"--output", "%(title)s.%(ext)s",
+		"--no-keep-video",
+		url,
+	)
+	return cmd.Run()
+}
+
+func EmbedAudio(title, artist string) error {
+	defer os.Remove("cover.jpg")
+
+	files, err := os.ReadDir(".")
+	if err != nil {
+		return fmt.Errorf("failed to read directory: %w", err)
+	}
+
+	var mp3File string
+	for _, file := range files {
+		if strings.HasSuffix(file.Name(), ".mp3") {
+			mp3File = file.Name()
+			break
+		}
+	}
+
+	if mp3File == "" {
+		return errors.New("no MP3 file found after download")
+	}
+
+	cmd := exec.Command(
+		"ffmpeg",
+		"-i", mp3File,
+		"-i", "cover.jpg",
+		"-map", "0:0",
+		"-map", "1:0",
+		"-metadata", "title="+title,
+		"-metadata", "artist="+artist,
+		"-c:a", "copy",
+		"-c:v", "copy",
+		"-id3v2_version", "3",
+		"-disposition:v:0", "attached_pic",
+		"output.mp3",
+	)
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to add metadata: %w", err)
+	}
+
+	if err := os.Remove(mp3File); err != nil {
+		return fmt.Errorf("failed to remove original mp3 file: %w", err)
+	}
+
+	return nil
+}
+
 func parseDuration(duration string) (time.Duration, error) {
 	parts := strings.Split(duration, ":")
 	if len(parts) > 2 {
@@ -54,7 +132,7 @@ func parseDuration(duration string) (time.Duration, error) {
 	return time.Duration(seconds) * time.Second, nil
 }
 
-func GetThumbnailURL(url string) (string, error) {
+func getThumbnailURL(url string) (string, error) {
 	cmd := exec.Command("yt-dlp", "--get-thumbnail", url)
 	output, err := cmd.Output()
 	if err != nil {
@@ -63,7 +141,7 @@ func GetThumbnailURL(url string) (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
-func DownloadThumbnail(url string) ([]byte, error) {
+func downloadThumbnail(url string) ([]byte, error) {
 	resp, err := http.Get(url)
 	if err != nil {
 		return nil, err
@@ -72,7 +150,7 @@ func DownloadThumbnail(url string) ([]byte, error) {
 	return io.ReadAll(resp.Body)
 }
 
-func CropCover(imgData []byte) ([]byte, error) {
+func cropThumbnail(imgData []byte) ([]byte, error) {
 	img, err := webp.Decode(bytes.NewReader(imgData))
 	if err != nil {
 		return nil, err
@@ -98,66 +176,4 @@ func CropCover(imgData []byte) ([]byte, error) {
 	}
 
 	return buf.Bytes(), nil
-}
-
-func DownloadAudio(url string, imgData []byte, title string, artist string) error {
-	if err := os.WriteFile("cover.jpg", imgData, 0644); err != nil {
-		return fmt.Errorf("failed to save thumbnail: %w", err)
-	}
-	defer os.Remove("cover.jpg")
-
-	cmd := exec.Command(
-		"yt-dlp",
-		"-x",
-		"--audio-format", "mp3",
-		"--audio-quality", "0",
-		"--output", "%(title)s.%(ext)s",
-		"--no-keep-video",
-		url,
-	)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to download audio: %w", err)
-	}
-
-	files, err := os.ReadDir(".")
-	if err != nil {
-		return fmt.Errorf("failed to read directory: %w", err)
-	}
-
-	var mp3File string
-	for _, file := range files {
-		if strings.HasSuffix(file.Name(), ".mp3") {
-			mp3File = file.Name()
-			break
-		}
-	}
-
-	if mp3File == "" {
-		return errors.New("no MP3 file found after download")
-	}
-
-	cmd = exec.Command(
-		"ffmpeg",
-		"-i", mp3File,
-		"-i", "cover.jpg",
-		"-map", "0:0",
-		"-map", "1:0",
-		"-metadata", "title="+title,
-		"-metadata", "artist="+artist,
-		"-c:a", "copy",
-		"-c:v", "copy",
-		"-id3v2_version", "3",
-		"-disposition:v:0", "attached_pic",
-		"output.mp3",
-	)
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to add metadata: %w", err)
-	}
-
-	if err := os.Remove(mp3File); err != nil {
-		return fmt.Errorf("failed to remove original mp3 file: %w", err)
-	}
-
-	return nil
 }
