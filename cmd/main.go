@@ -12,7 +12,7 @@ import (
 	"github.com/kobaltio/api/internal/server"
 )
 
-func gracefulShutdown(apiServer *http.Server, done chan bool) {
+func gracefulShutdown(server *http.Server, done chan bool) {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -22,11 +22,11 @@ func gracefulShutdown(apiServer *http.Server, done chan bool) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := apiServer.Shutdown(ctx); err != nil {
-		log.Printf("Server forced to shutdown with error: %v", err)
+	if err := server.Shutdown(ctx); err != nil {
+		log.Printf("server forced to shutdown with error: %v", err)
 	}
 
-	log.Println("Server exiting")
+	log.Println("server exiting")
 
 	done <- true
 }
@@ -44,5 +44,5 @@ func main() {
 	}
 
 	<-done
-	log.Println("Graceful shutdown complete.")
+	log.Println("graceful shutdown complete")
 }

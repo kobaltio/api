@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/draw"
 	"image/jpeg"
 	_ "image/png"
 	"io"
@@ -15,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/image/webp"
 )
 
 func IsValidURL(url string) bool {
@@ -70,14 +73,13 @@ func DownloadThumbnail(url string) ([]byte, error) {
 }
 
 func CropCover(imgData []byte) ([]byte, error) {
-	img, _, err := image.Decode(bytes.NewReader(imgData))
+	img, err := webp.Decode(bytes.NewReader(imgData))
 	if err != nil {
 		return nil, err
 	}
 
 	bounds := img.Bounds()
-	width := bounds.Dx()
-	height := bounds.Dy()
+	width, height := bounds.Dx(), bounds.Dy()
 
 	size := width
 	if height < width {
@@ -85,13 +87,10 @@ func CropCover(imgData []byte) ([]byte, error) {
 	}
 	x := (width - size) / 2
 	y := (height - size) / 2
+	cropRect := image.Rect(0, 0, size, size)
 
-	croppedImg := image.NewRGBA(image.Rect(0, 0, size, size))
-	for i := 0; i < size; i++ {
-		for j := 0; j < size; j++ {
-			croppedImg.Set(i, j, img.At(x+i, y+j))
-		}
-	}
+	croppedImg := image.NewRGBA(cropRect)
+	draw.Draw(croppedImg, cropRect, img, image.Pt(x, y), draw.Src)
 
 	var buf bytes.Buffer
 	if err := jpeg.Encode(&buf, croppedImg, &jpeg.Options{Quality: 90}); err != nil {
