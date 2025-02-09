@@ -1,8 +1,11 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"fmt"
 	"time"
@@ -17,6 +20,7 @@ import (
 func (s *Server) RegisterRoutes() http.Handler {
 	r := chi.NewRouter()
 
+	r.Use(middleware.RequestID)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Heartbeat("/health"))
@@ -55,6 +59,24 @@ func (s *Server) convertHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
+	requestID := middleware.GetReqID(r.Context())
+	workDir := filepath.Join(os.TempDir(), "kobalt", requestID)
+
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	if err := os.MkdirAll(workDir, 0755); err != nil {
+		sendErr(w, "failed to create temp directory")
+		return
+	}
+
+	go func() {
+		<-ctx.Done()
+		os.RemoveAll(workDir)
+	}()
+
+	ctx = context.WithValue(ctx, "workDir", workDir)
+
 	url := r.URL.Query().Get("url")
 	title := r.URL.Query().Get("title")
 	artist := r.URL.Query().Get("artist")
@@ -86,31 +108,35 @@ func (s *Server) convertHandler(w http.ResponseWriter, r *http.Request) {
 	coverErrChan := make(chan error)
 
 	go func() {
-		audioErrChan <- converter.DownloadAudio(url)
+		audioErrChan <- converter.DownloadAudio(ctx, url)
 	}()
 	go func() {
-		coverErrChan <- converter.DownloadCover(url)
+		coverErrChan <- converter.DownloadCover(ctx, url)
 	}()
 
 	audioErr := <-audioErrChan
 	coverErr := <-coverErrChan
 
 	if audioErr != nil {
+		cancel()
 		sendErr(w, "error downloading audio")
 		return
 	}
 	if coverErr != nil {
+		cancel()
 		sendErr(w, "error downloading thumbnail")
 		return
 	}
 
 	sendRes(w, StatusProgress, "Embedding mp3 file...", 90)
-	if err := converter.EmbedAudio(title, artist); err != nil {
+	if err := converter.EmbedAudio(ctx, title, artist); err != nil {
+		cancel()
 		sendErr(w, "error embedding mp3 file")
 		return
 	}
 
 	sendRes(w, StatusCompleted, "Conversion completed", 100)
+	os.RemoveAll(workDir)
 }
 
 func sendRes(w http.ResponseWriter, status Status, msg string, progress int) {

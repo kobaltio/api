@@ -2,8 +2,8 @@ package converter
 
 import (
 	"bytes"
+	"context"
 	"errors"
-	"fmt"
 	"image"
 	"image/draw"
 	"image/jpeg"
@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -36,7 +37,9 @@ func GetVideoDuration(url string) (time.Duration, error) {
 	return parseDuration(durationStr)
 }
 
-func DownloadCover(url string) error {
+func DownloadCover(ctx context.Context, url string) error {
+	workDir := ctx.Value("workDir").(string)
+
 	thumbnailURL, err := getThumbnailURL(url)
 	if err != nil {
 		return err
@@ -53,46 +56,36 @@ func DownloadCover(url string) error {
 		return err
 	}
 
-	return os.WriteFile("cover.jpg", croppedImgData, 0644)
+	output := filepath.Join(workDir, "cover.jpg")
+	return os.WriteFile(output, croppedImgData, 0644)
 }
 
-func DownloadAudio(url string) error {
+func DownloadAudio(ctx context.Context, url string) error {
+	workDir := ctx.Value("workDir").(string)
+	output := filepath.Join(workDir, "audio.mp3")
+
 	cmd := exec.Command(
 		"yt-dlp",
 		"-x",
 		"--audio-format", "mp3",
 		"--audio-quality", "0",
-		"--output", "%(title)s.%(ext)s",
+		"--output", output,
 		"--no-keep-video",
 		url,
 	)
 	return cmd.Run()
 }
 
-func EmbedAudio(title, artist string) error {
-	defer os.Remove("cover.jpg")
+func EmbedAudio(ctx context.Context, title, artist string) error {
+	workDir := ctx.Value("workDir").(string)
 
-	files, err := os.ReadDir(".")
-	if err != nil {
-		return fmt.Errorf("failed to read directory: %w", err)
-	}
-
-	var mp3File string
-	for _, file := range files {
-		if strings.HasSuffix(file.Name(), ".mp3") {
-			mp3File = file.Name()
-			break
-		}
-	}
-
-	if mp3File == "" {
-		return errors.New("no MP3 file found after download")
-	}
+	mp3File := filepath.Join(workDir, "audio.mp3")
+	coverFile := filepath.Join(workDir, "cover.jpg")
 
 	cmd := exec.Command(
 		"ffmpeg",
 		"-i", mp3File,
-		"-i", "cover.jpg",
+		"-i", coverFile,
 		"-map", "0:0",
 		"-map", "1:0",
 		"-metadata", "title="+title,
@@ -104,15 +97,7 @@ func EmbedAudio(title, artist string) error {
 		"output.mp3",
 	)
 
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to add metadata: %w", err)
-	}
-
-	if err := os.Remove(mp3File); err != nil {
-		return fmt.Errorf("failed to remove original mp3 file: %w", err)
-	}
-
-	return nil
+	return cmd.Run()
 }
 
 func parseDuration(duration string) (time.Duration, error) {
