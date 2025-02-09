@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/image/webp"
 )
 
 func IsValidURL(url string) bool {
@@ -40,12 +42,13 @@ func DownloadCover(url string) error {
 		return err
 	}
 
-	imgData, err := downloadThumbnail(thumbnailURL)
+	imgData, err := getThumbnailData(thumbnailURL)
 	if err != nil {
 		return err
 	}
 
-	croppedImgData, err := cropThumbnail(imgData)
+	ext := getFileExtension(thumbnailURL)
+	croppedImgData, err := cropThumbnail(imgData, ext)
 	if err != nil {
 		return err
 	}
@@ -139,7 +142,7 @@ func getThumbnailURL(url string) (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
-func downloadThumbnail(url string) ([]byte, error) {
+func getThumbnailData(url string) ([]byte, error) {
 	resp, err := http.Get(url)
 	if err != nil {
 		return nil, err
@@ -148,10 +151,23 @@ func downloadThumbnail(url string) ([]byte, error) {
 	return io.ReadAll(resp.Body)
 }
 
-func cropThumbnail(imgData []byte) ([]byte, error) {
-	img, _, err := image.Decode(bytes.NewReader(imgData))
-	if err != nil {
-		return nil, err
+func cropThumbnail(imgData []byte, ext string) ([]byte, error) {
+	var img image.Image
+	bytesReader := bytes.NewReader(imgData)
+
+	switch ext {
+	case "webp":
+		image, err := webp.Decode(bytesReader)
+		if err != nil {
+			return nil, err
+		}
+		img = image
+	default:
+		image, _, err := image.Decode(bytesReader)
+		if err != nil {
+			return nil, err
+		}
+		img = image
 	}
 
 	bounds := img.Bounds()
@@ -174,4 +190,13 @@ func cropThumbnail(imgData []byte) ([]byte, error) {
 	}
 
 	return buf.Bytes(), nil
+}
+
+func getFileExtension(url string) string {
+	ext := ""
+	lastDot := strings.LastIndex(url, ".")
+	if lastDot != -1 && lastDot < len(url)-1 {
+		ext = url[lastDot+1:]
+	}
+	return strings.ToLower(ext)
 }
