@@ -2,81 +2,47 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/cors"
-	"github.com/go-chi/httprate"
-	"github.com/kobaltio/api/internal/convert"
+	"github.com/kobaltio/api/internal/server"
 )
 
-func gracefulShutdown(server *http.Server) {
-	serverCtx, serverStopCtx := context.WithCancel(context.Background())
+func gracefulShutdown(apiServer *http.Server, done chan bool) {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
-	go func() {
-		<-sig
+	<-ctx.Done()
 
-		shutdownCtx, cancel := context.WithTimeout(serverCtx, 10*time.Second)
-		defer cancel()
+	log.Println("shutting down gracefully, press Ctrl+C again to force")
 
-		go func() {
-			<-shutdownCtx.Done()
-			if shutdownCtx.Err() == context.DeadlineExceeded {
-				log.Fatal("graceful shutdown timed out.. forcing exit.")
-			}
-		}()
-
-		err := server.Shutdown(shutdownCtx)
-		if err != nil {
-			log.Fatal(err)
-		}
-		serverStopCtx()
-	}()
-
-	err := server.ListenAndServe()
-	if err != nil && err != http.ErrServerClosed {
-		log.Fatal(err)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := apiServer.Shutdown(ctx); err != nil {
+		log.Printf("Server forced to shutdown with error: %v", err)
 	}
 
-	<-serverCtx.Done()
-}
+	log.Println("Server exiting")
 
-func registerRoutes() *chi.Mux {
-	router := chi.NewRouter()
-
-	router.Use(
-		cors.Handler(
-			cors.Options{
-				AllowedMethods: []string{"GET", "OPTIONS"},
-			},
-		),
-		middleware.RequestID,
-		middleware.Logger,
-		middleware.RedirectSlashes,
-		middleware.Recoverer,
-		middleware.Timeout(30*time.Second),
-		middleware.Heartbeat("/healthz"),
-		httprate.LimitByIP(10, time.Minute),
-	)
-
-	router.Route("/api/v1", func(r chi.Router) {
-		r.Mount("/convert", convert.RegisterRoutes())
-	})
-
-	return router
+	done <- true
 }
 
 func main() {
-	gracefulShutdown(&http.Server{
-		Addr:    "0.0.0.0:8080",
-		Handler: registerRoutes(),
-	})
+	server := server.NewServer()
+
+	done := make(chan bool, 1)
+
+	go gracefulShutdown(server, done)
+
+	err := server.ListenAndServe()
+	if err != nil && err != http.ErrServerClosed {
+		panic(fmt.Sprintf("http server error: %s", err))
+	}
+
+	<-done
+	log.Println("Graceful shutdown complete.")
 }

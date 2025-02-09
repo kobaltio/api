@@ -1,14 +1,39 @@
-package convert
+package server
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
+
+	"fmt"
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/kobaltio/api/internal/utils"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
+	"github.com/go-chi/httprate"
+	"github.com/kobaltio/api/internal/converter"
 )
+
+func (s *Server) RegisterRoutes() http.Handler {
+	r := chi.NewRouter()
+
+	r.Use(middleware.Logger)
+	r.Use(middleware.Recoverer)
+	r.Use(middleware.Heartbeat("/health"))
+	r.Use(httprate.LimitByIP(10, time.Minute))
+
+	r.Use(cors.Handler(cors.Options{
+		AllowedOrigins:   []string{"https://*", "http://*"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
+		AllowCredentials: true,
+		MaxAge:           300,
+	}))
+
+	r.Get("/api/v1/convert", s.convertHandler)
+
+	return r
+}
 
 type Status string
 
@@ -25,13 +50,7 @@ type Response struct {
 	Error    string `json:"error,omitempty"`
 }
 
-func RegisterRoutes() *chi.Mux {
-	r := chi.NewRouter()
-	r.Get("/", ConvertHandler)
-	return r
-}
-
-func ConvertHandler(w http.ResponseWriter, r *http.Request) {
+func (s *Server) convertHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -46,12 +65,12 @@ func ConvertHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sendRes(w, StatusProgress, "Validating YouTube URL...", 10)
-	if !utils.IsValidURL(url) {
+	if !converter.IsValidURL(url) {
 		sendErr(w, "invalid YouTube link")
 	}
 
 	sendRes(w, StatusProgress, "Validating video duration...", 20)
-	duration, err := utils.GetVideoDuration(url)
+	duration, err := converter.GetVideoDuration(url)
 	if err != nil {
 		sendErr(w, "error getting video duration")
 		return
@@ -62,28 +81,28 @@ func ConvertHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sendRes(w, StatusProgress, "Getting thumbnail URL...", 40)
-	thumbnailURL, err := utils.GetThumbnailURL(url)
+	thumbnailURL, err := converter.GetThumbnailURL(url)
 	if err != nil {
 		sendErr(w, "error getting thumbnail URL")
 		return
 	}
 
 	sendRes(w, StatusProgress, "Downloading thumbnail...", 50)
-	thumbnail, err := utils.DownloadThumbnail(thumbnailURL)
+	thumbnail, err := converter.DownloadThumbnail(thumbnailURL)
 	if err != nil {
 		sendErr(w, "error downloading thumbnail")
 		return
 	}
 
 	sendRes(w, StatusProgress, "Cropping thumbnail...", 70)
-	croppedCover, err := utils.CropCover(thumbnail)
+	croppedCover, err := converter.CropCover(thumbnail)
 	if err != nil {
 		sendErr(w, "error cropping thumbnail")
 		return
 	}
 
 	sendRes(w, StatusProgress, "Downloading and embedding audio...", 80)
-	if err := utils.DownloadAudio(url, croppedCover, title, artist); err != nil {
+	if err := converter.DownloadAudio(url, croppedCover, title, artist); err != nil {
 		sendErr(w, "error downloading audio")
 		return
 	}
