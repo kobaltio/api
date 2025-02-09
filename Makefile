@@ -1,14 +1,21 @@
+GOFILES = $(shell find . -name \*.go)
+
 build: # Build the application
+	@echo "Building..."
 	@go build -o main ./cmd/main.go
 
 run: # Run the application
 	@go run ./cmd/main.go
 
-test: # Run tests
-	@go test -v ./...
+test: # Test the application
+	@echo "Vetting..."
+	@ go vet ./...
+	@echo "Testing..."
+	@go test ./... -v
 
 clean: # Clean the binary
-	@rm -rf main
+	@echo "Cleaning..."
+	@rm -f main
 
 watch: # Live reload
 	@if command -v air > /dev/null; then \
@@ -19,8 +26,9 @@ watch: # Live reload
 		air; \
 	fi
 
-lint: # Lint
+verify: # Run golangci-lint
 	@if command -v golangci-lint > /dev/null; then \
+		echo "Running golangci-lint..."; \
 		golangci-lint run ./...; \
 	else \
 		echo "installing golangci-lint..."; \
@@ -28,7 +36,14 @@ lint: # Lint
 		golangci-lint run ./...; \
 	fi
 
+fmt: # Verify gofmt and goimports
+	@echo "Verifying gofmt..."
+	@!(gofmt -l -s -d ${GOFILES} | grep '[a-z]')
+
+	@echo "Verifying goimports..."
+	@!(go run golang.org/x/tools/cmd/goimports@latest -l -d ${GOFILES} | grep '[a-z]')
+
 help: # Print help
 	@grep -E '^[a-zA-Z0-9 -]+:.*#'  Makefile | sort | while read -r l; do printf "\033[1;32m$$(echo $$l | cut -f 1 -d':')\033[00m:$$(echo $$l | cut -f 2- -d'#')\n"; done
 
-.PHONY: build run test clean watch lint help
+.PHONY: build run test clean watch verify fmt help
