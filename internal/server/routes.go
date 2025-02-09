@@ -75,7 +75,7 @@ func (s *Server) convertHandler(w http.ResponseWriter, r *http.Request) {
 		os.RemoveAll(workDir)
 	}()
 
-	ctx = context.WithValue(ctx, "workDir", workDir)
+	ctx = context.WithValue(ctx, converter.WorkDir, workDir)
 
 	url := r.URL.Query().Get("url")
 	title := r.URL.Query().Get("title")

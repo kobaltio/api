@@ -21,6 +21,10 @@ import (
 	"golang.org/x/image/webp"
 )
 
+const WorkDir Key = "workDir"
+
+type Key string
+
 func IsValidURL(url string) bool {
 	regex := `^(https?://)?(www\.)?(youtube\.com|youtu\.be)/.+$`
 	matched, err := regexp.MatchString(regex, url)
@@ -38,7 +42,7 @@ func GetVideoDuration(url string) (time.Duration, error) {
 }
 
 func DownloadCover(ctx context.Context, url string) error {
-	workDir := ctx.Value("workDir").(string)
+	workDir := ctx.Value(WorkDir).(string)
 
 	thumbnailURL, err := getThumbnailURL(url)
 	if err != nil {
@@ -61,7 +65,7 @@ func DownloadCover(ctx context.Context, url string) error {
 }
 
 func DownloadAudio(ctx context.Context, url string) error {
-	workDir := ctx.Value("workDir").(string)
+	workDir := ctx.Value(WorkDir).(string)
 	output := filepath.Join(workDir, "audio.mp3")
 
 	cmd := exec.Command(
@@ -77,7 +81,7 @@ func DownloadAudio(ctx context.Context, url string) error {
 }
 
 func EmbedAudio(ctx context.Context, title, artist string) error {
-	workDir := ctx.Value("workDir").(string)
+	workDir := ctx.Value(WorkDir).(string)
 
 	mp3File := filepath.Join(workDir, "audio.mp3")
 	coverFile := filepath.Join(workDir, "cover.jpg")
