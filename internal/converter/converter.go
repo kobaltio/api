@@ -16,8 +16,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"golang.org/x/image/webp"
 )
 
 func IsValidURL(url string) bool {
@@ -151,7 +149,7 @@ func downloadThumbnail(url string) ([]byte, error) {
 }
 
 func cropThumbnail(imgData []byte) ([]byte, error) {
-	img, err := webp.Decode(bytes.NewReader(imgData))
+	img, _, err := image.Decode(bytes.NewReader(imgData))
 	if err != nil {
 		return nil, err
 	}

@@ -80,19 +80,31 @@ func (s *Server) convertHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sendRes(w, StatusProgress, "Downloading audio...", 50)
-	if err := converter.DownloadAudio(url); err != nil {
+	sendRes(w, StatusProgress, "Downloading audio and thumbnail...", 70)
+
+	audioErrChan := make(chan error)
+	coverErrChan := make(chan error)
+
+	go func() {
+		audioErrChan <- converter.DownloadAudio(url)
+	}()
+	go func() {
+		coverErrChan <- converter.DownloadCover(url)
+	}()
+
+	audioErr := <-audioErrChan
+	coverErr := <-coverErrChan
+
+	if audioErr != nil {
 		sendErr(w, "error downloading audio")
 		return
 	}
-
-	sendRes(w, StatusProgress, "Downloading thumbnail...", 70)
-	if err := converter.DownloadCover(url); err != nil {
+	if coverErr != nil {
 		sendErr(w, "error downloading thumbnail")
 		return
 	}
 
-	sendRes(w, StatusProgress, "Embedding mp3 file...", 80)
+	sendRes(w, StatusProgress, "Embedding mp3 file...", 90)
 	if err := converter.EmbedAudio(title, artist); err != nil {
 		sendErr(w, "error embedding mp3 file")
 		return
