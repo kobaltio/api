@@ -26,7 +26,7 @@ const WorkDir Key = "workDir"
 type Key string
 
 func IsValidURL(url string) bool {
-	regex := `^(https?://)?(www\.)?(youtube\.com|youtu\.be)/.+$`
+	regex := `^(?:https?:\/\/)?(?:m\.|www\.)?(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))((\w|-){11})(?:\S+)?$`
 	matched, err := regexp.MatchString(regex, url)
 	return matched && err == nil
 }
@@ -182,10 +182,13 @@ func cropThumbnail(imgData []byte, ext string) ([]byte, error) {
 }
 
 func getFileExtension(url string) string {
+	baseURL := strings.Split(url, "?")[0]
+	baseURL = strings.Split(baseURL, "#")[0]
+
 	ext := ""
-	lastDot := strings.LastIndex(url, ".")
-	if lastDot != -1 && lastDot < len(url)-1 {
-		ext = url[lastDot+1:]
+	lastDot := strings.LastIndex(baseURL, ".")
+	if lastDot != -1 && lastDot < len(baseURL)-1 {
+		ext = baseURL[lastDot+1:]
 	}
 	return strings.ToLower(ext)
 }
