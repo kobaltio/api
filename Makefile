@@ -26,7 +26,7 @@ watch: # Live reload
 		air; \
 	fi
 
-verify: # Run golangci-lint
+lint: # Run golangci-lint
 	@if command -v golangci-lint > /dev/null; then \
 		echo "Running golangci-lint..."; \
 		golangci-lint run ./...; \
@@ -36,7 +36,7 @@ verify: # Run golangci-lint
 		golangci-lint run ./...; \
 	fi
 
-fmt: # Verify gofmt and goimports
+fmt: # Run gofmt and goimports
 	@echo "Verifying gofmt..."
 	@!(gofmt -l -s -d ${GOFILES} | grep '[a-z]')
 
