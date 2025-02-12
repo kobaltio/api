@@ -26,10 +26,9 @@ import (
 
 type Key string
 
-const (
-	WorkDir      Key = "workDir"
-	S3BucketName     = "kobaltio-files"
-)
+const WorkDir Key = "workDir"
+
+const S3BucketName = "kobaltio-files"
 
 func IsValidURL(url string) bool {
 	regex := `^(?:https?:\/\/)?(?:m\.|www\.)?(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))((\w|-){11})(?:\S+)?$`
