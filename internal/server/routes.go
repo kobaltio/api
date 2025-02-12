@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/go-chi/httprate"
+	"github.com/google/uuid"
 	"github.com/kobaltio/api/internal/converter"
 )
 
@@ -102,7 +103,7 @@ func (s *Server) convertHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sendRes(w, StatusProgress, "Downloading audio and thumbnail...", 70)
+	sendRes(w, StatusProgress, "Downloading audio and thumbnail...", 50)
 
 	audioErrChan := make(chan error)
 	coverErrChan := make(chan error)
@@ -128,14 +129,24 @@ func (s *Server) convertHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sendRes(w, StatusProgress, "Embedding mp3 file...", 90)
-	if err := converter.EmbedAudio(ctx, title, artist); err != nil {
+	fileName := fmt.Sprintf("%s.mp3", uuid.New().String())
+
+	sendRes(w, StatusProgress, "Embedding mp3 file...", 70)
+	if err := converter.EmbedAudio(ctx, title, artist, fileName); err != nil {
 		cancel()
 		sendErr(w, "error embedding mp3 file")
 		return
 	}
 
-	sendRes(w, StatusCompleted, "Conversion completed", 100)
+	sendRes(w, StatusProgress, "Generating download link...", 90)
+	downloadURL, err := converter.UploadToS3(ctx, fileName)
+	if err != nil {
+		cancel()
+		sendErr(w, "error generating download link")
+		return
+	}
+
+	sendRes(w, StatusCompleted, downloadURL, 100)
 	os.RemoveAll(workDir)
 }
 

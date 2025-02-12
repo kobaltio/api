@@ -18,12 +18,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
 	"golang.org/x/image/webp"
 )
 
-const WorkDir Key = "workDir"
-
 type Key string
+
+const (
+	WorkDir      Key = "workDir"
+	S3BucketName     = "kobaltio-files"
+)
 
 func IsValidURL(url string) bool {
 	regex := `^(?:https?:\/\/)?(?:m\.|www\.)?(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))((\w|-){11})(?:\S+)?$`
@@ -80,11 +86,12 @@ func DownloadAudio(ctx context.Context, url string) error {
 	return cmd.Run()
 }
 
-func EmbedAudio(ctx context.Context, title, artist string) error {
+func EmbedAudio(ctx context.Context, title, artist, fileName string) error {
 	workDir := ctx.Value(WorkDir).(string)
 
 	mp3File := filepath.Join(workDir, "audio.mp3")
 	coverFile := filepath.Join(workDir, "cover.jpg")
+	outputFile := filepath.Join(workDir, fileName)
 
 	cmd := exec.Command(
 		"ffmpeg",
@@ -98,10 +105,58 @@ func EmbedAudio(ctx context.Context, title, artist string) error {
 		"-c:v", "copy",
 		"-id3v2_version", "3",
 		"-disposition:v:0", "attached_pic",
-		"output.mp3",
+		outputFile,
 	)
 
 	return cmd.Run()
+}
+
+func UploadToS3(ctx context.Context, fileName string) (string, error) {
+	workDir := ctx.Value(WorkDir).(string)
+	path := filepath.Join(workDir, fileName)
+
+	region := os.Getenv("AWS_REGION")
+	if region == "" {
+		region = "eu-north-1"
+	}
+
+	sess, err := session.NewSession(&aws.Config{
+		Region: aws.String(region),
+	})
+	if err != nil {
+		return "", err
+	}
+
+	svc := s3.New(sess)
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	key := filepath.Base(path)
+
+	_, err = svc.PutObject(&s3.PutObjectInput{
+		Bucket: aws.String(S3BucketName),
+		Key:    aws.String(key),
+		Body:   file,
+		ACL:    aws.String("private"),
+	})
+	if err != nil {
+		return "", err
+	}
+
+	req, _ := svc.GetObjectRequest(&s3.GetObjectInput{
+		Bucket: aws.String(S3BucketName),
+		Key:    aws.String(key),
+	})
+
+	urlStr, err := req.Presign(5 * time.Minute)
+	if err != nil {
+		return "", err
+	}
+
+	return urlStr, nil
 }
 
 func parseDuration(duration string) (time.Duration, error) {
