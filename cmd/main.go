@@ -5,38 +5,51 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/kobaltio/api/internal/server"
+	"go.uber.org/zap"
 )
 
-func gracefulShutdown(server *http.Server, done chan bool) {
+func gracefulShutdown(server *http.Server, done chan bool, logger *zap.Logger) {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	<-ctx.Done()
 
-	log.Println("shutting down gracefully, press Ctrl+C again to force")
+	logger.Info("shutting down gracefully, press Ctrl+C again to force")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
-		log.Printf("server forced to shutdown with error: %v", err)
+		logger.Error("server forced to shutdown", zap.Error(err))
 	}
 
-	log.Println("server exiting")
+	logger.Info("server exiting")
 
 	done <- true
 }
 
 func main() {
-	server := server.NewServer()
+	logger := zap.Must(zap.NewProduction())
+	if os.Getenv("APP_ENV") == "development" {
+		logger = zap.Must(zap.NewDevelopment())
+	}
+
+	defer func() {
+		err := logger.Sync()
+		if err != nil {
+			log.Fatalf("failed to sync logger: %s", err)
+		}
+	}()
+
+	server := server.NewServer(logger)
 
 	done := make(chan bool, 1)
-
-	go gracefulShutdown(server, done)
+	go gracefulShutdown(server, done, logger)
 
 	err := server.ListenAndServe()
 	if err != nil && err != http.ErrServerClosed {
@@ -44,5 +57,5 @@ func main() {
 	}
 
 	<-done
-	log.Println("graceful shutdown complete")
+	logger.Info("graceful shutdown complete")
 }

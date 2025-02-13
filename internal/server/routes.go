@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/httprate"
 	"github.com/google/uuid"
 	"github.com/kobaltio/api/internal/converter"
+	"go.uber.org/zap"
 )
 
 func (s *Server) RegisterRoutes() http.Handler {
@@ -56,27 +57,11 @@ type Response struct {
 }
 
 func (s *Server) convertHandler(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-
-	requestID := middleware.GetReqID(r.Context())
-	workDir := filepath.Join(os.TempDir(), "kobalt", requestID)
-
-	ctx, cancel := context.WithCancel(r.Context())
-	defer cancel()
-
-	if err := os.MkdirAll(workDir, 0755); err != nil {
-		sendErr(w, "failed to create temp directory")
-		return
-	}
-
-	go func() {
-		<-ctx.Done()
-		os.RemoveAll(workDir)
-	}()
-
-	ctx = context.WithValue(ctx, converter.WorkDir, workDir)
 
 	url := r.URL.Query().Get("url")
 	title := r.URL.Query().Get("title")
@@ -92,10 +77,30 @@ func (s *Server) convertHandler(w http.ResponseWriter, r *http.Request) {
 		sendErr(w, "invalid YouTube link")
 	}
 
+	requestID := middleware.GetReqID(r.Context())
+	workDir := filepath.Join(os.TempDir(), "kobalt", requestID)
+
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	if err := os.MkdirAll(workDir, 0755); err != nil {
+		sendErr(w, "failed to create temp directory")
+		s.logger.Error("failed to create workdir directory", zap.Error(err))
+		return
+	}
+
+	go func() {
+		<-ctx.Done()
+		os.RemoveAll(workDir)
+	}()
+
+	ctx = context.WithValue(ctx, converter.WorkDir, workDir)
+
 	sendRes(w, StatusProgress, "Validating video duration...", 20)
 	duration, err := converter.GetVideoDuration(url)
 	if err != nil {
 		sendErr(w, "error getting video duration")
+		s.logger.Error("failed to get video duration", zap.Error(err))
 		return
 	}
 	if duration > (5 * time.Minute) {
@@ -119,13 +124,15 @@ func (s *Server) convertHandler(w http.ResponseWriter, r *http.Request) {
 	coverErr := <-coverErrChan
 
 	if audioErr != nil {
-		cancel()
 		sendErr(w, "error downloading audio")
-		return
+		s.logger.Error("failed to download audio", zap.Error(audioErr))
 	}
 	if coverErr != nil {
-		cancel()
+		s.logger.Error("failed to download thumbnail", zap.Error(coverErr))
 		sendErr(w, "error downloading thumbnail")
+	}
+	if (audioErr != nil) || (coverErr != nil) {
+		cancel()
 		return
 	}
 
@@ -135,6 +142,7 @@ func (s *Server) convertHandler(w http.ResponseWriter, r *http.Request) {
 	if err := converter.EmbedAudio(ctx, title, artist, fileName); err != nil {
 		cancel()
 		sendErr(w, "error embedding mp3 file")
+		s.logger.Error("failed to embed mp3 file", zap.Error(err))
 		return
 	}
 
@@ -143,11 +151,17 @@ func (s *Server) convertHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		cancel()
 		sendErr(w, "error generating download link")
+		s.logger.Error("failed to generate download link", zap.Error(err))
 		return
 	}
 
 	sendRes(w, StatusCompleted, downloadURL, 100)
 	os.RemoveAll(workDir)
+
+	s.logger.Info("processed request",
+		zap.String("requestID", requestID),
+		zap.Float64("seconds", time.Since(start).Seconds()),
+	)
 }
 
 func sendRes(w http.ResponseWriter, status Status, msg string, progress int) {
