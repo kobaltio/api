@@ -8,20 +8,23 @@ import (
 	"time"
 
 	_ "github.com/joho/godotenv/autoload"
+	"go.uber.org/zap"
 )
 
 type Server struct {
-	port int
+	port   int
+	logger *zap.Logger
 }
 
-func NewServer() *http.Server {
+func NewServer(logger *zap.Logger) *http.Server {
 	port, _ := strconv.Atoi(os.Getenv("PORT"))
 	if port == 0 {
 		port = 8080
 	}
 
 	newServer := &Server{
-		port: port,
+		port:   port,
+		logger: logger,
 	}
 
 	server := &http.Server{
