@@ -1,4 +1,4 @@
-FROM golang:1.23-alpine as build
+FROM golang:1.24-alpine as build
 
 WORKDIR /app
 
@@ -26,6 +26,6 @@ COPY --from=build /app/main /app/main
 
 RUN chmod +x /app/main
 
-EXPOSE 8080
+EXPOSE ${PORT}
 
 ENTRYPOINT ["./main"]
