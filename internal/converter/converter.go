@@ -40,7 +40,7 @@ func GetVideoDuration(url string) (time.Duration, error) {
 	cmd := exec.Command("yt-dlp", "--get-duration", url)
 	output, err := cmd.Output()
 	if err != nil {
-		return 0, err
+		return 0, errors.New(err.Error() + ": " + string(output))
 	}
 	durationStr := strings.TrimSpace(string(output))
 	return parseDuration(durationStr)
