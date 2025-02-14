@@ -20,6 +20,7 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     && pip3 install yt-dlp \
     && apt-get clean \
+    && ln -s /usr/local/bin/yt-dlp /usr/bin/yt-dlp \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app/main /app/main
