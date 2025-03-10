@@ -9,12 +9,12 @@ require (
 	github.com/go-chi/httprate v0.14.1
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
-	golang.org/x/image v0.24.0
+	go.uber.org/zap v1.27.0
+	golang.org/x/image v0.25.0
 )
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.uber.org/zap v1.27.0 // indirect
 )
